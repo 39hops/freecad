@@ -3,7 +3,9 @@
   "exclude": [
     "**/__pycache__",
     "**/.venv",
-    "**/output"
+    "**/output",
+    "**/node_modules", 
+    "**/.*"
   ],
   "typeCheckingMode": "strict",
   "reportMissingImports": "warning",
