@@ -52,11 +52,15 @@ Icon
 *.FCStd1
 
 # Project artifacts
-output/
-*.step
-*.stp
+*.FCStd
+*.FCStd1
+*.FCBak
 
 # AI
 CLAUDE.md
 CODEX.md
 .claude
+
+
+# Output
+output/

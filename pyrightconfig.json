@@ -3,8 +3,7 @@
   "exclude": [
     "**/__pycache__",
     "**/.venv",
-    "**/Sample_Files",
-    "**/Images"
+    "**/output"
   ],
   "typeCheckingMode": "strict",
   "reportMissingImports": "warning",
@@ -16,6 +15,6 @@
   "reportUnknownLambdaType": "none",
   "reportGeneralTypeIssues": "warning",
   "reportAttributeAccessIssue": "warning",
-  "pythonVersion": "3.10",
+  "pythonVersion": "3.9",
   "pythonPlatform": "All"
 }
