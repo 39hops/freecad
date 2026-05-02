@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-properties>
+ <properties>
+  <frame-color>#808080</frame-color>
+  <fill-color>#808080</fill-color>
+  <name>substrate</name>
+  <source>1/0@1</source>
+ </properties>
+ <properties>
+  <frame-color>#15803d</frame-color>
+  <fill-color>#15803d</fill-color>
+  <name>wide</name>
+  <source>2/0@1</source>
+ </properties>
+ <properties>
+  <frame-color>#b91c1c</frame-color>
+  <fill-color>#b91c1c</fill-color>
+  <name>narrow</name>
+  <source>3/0@1</source>
+ </properties>
+ <name/>
+</layer-properties>

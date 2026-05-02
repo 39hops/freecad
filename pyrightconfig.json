@@ -1,0 +1,21 @@
+{
+  "include": ["main"],
+  "exclude": [
+    "**/__pycache__",
+    "**/.venv",
+    "**/Sample_Files",
+    "**/Images"
+  ],
+  "typeCheckingMode": "strict",
+  "reportMissingImports": "warning",
+  "reportMissingTypeStubs": "none",
+  "reportUnknownMemberType": "none",
+  "reportUnknownArgumentType": "none",
+  "reportUnknownVariableType": "none",
+  "reportUnknownParameterType": "none",
+  "reportUnknownLambdaType": "none",
+  "reportGeneralTypeIssues": "warning",
+  "reportAttributeAccessIssue": "warning",
+  "pythonVersion": "3.10",
+  "pythonPlatform": "All"
+}

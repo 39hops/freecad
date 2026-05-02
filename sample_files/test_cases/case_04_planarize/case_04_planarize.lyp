@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-properties>
+ <properties>
+  <frame-color>#808080</frame-color>
+  <fill-color>#808080</fill-color>
+  <name>substrate</name>
+  <source>1/0@1</source>
+ </properties>
+ <properties>
+  <frame-color>#dc2626</frame-color>
+  <fill-color>#dc2626</fill-color>
+  <name>m1</name>
+  <source>2/0@1</source>
+ </properties>
+ <properties>
+  <frame-color>#2563eb</frame-color>
+  <fill-color>#2563eb</fill-color>
+  <name>i1</name>
+  <source>3/0@1</source>
+ </properties>
+ <name/>
+</layer-properties>
