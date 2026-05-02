@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib
+import logging
 import math
 import os
 import random
@@ -18,11 +19,63 @@ import Part
 from FreeCAD import Base
 from PySide import QtCore, QtGui
 
-QtGui.QMessageBox.information(None, "", "Select the folder containing the supporting python modules.")
-dir_path = QtGui.QFileDialog.getExistingDirectory(None, 'Select Directory', os.path.expanduser('~'))
-if not dir_path:
-    raise RuntimeError("No directory selected for supporting python modules. Macro aborted.")
-print("Working environment:", dir_path)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+    datefmt="%H:%M:%S",
+    force=True,
+)
+LOGGER = logging.getLogger("gds2converter.main")
+
+REQUIRED_MODULE_FILES = ("bulk.py", "input_files.py", "planarize.py", "supporting_functions.py")
+
+def has_support_modules(path: str) -> bool:
+    """Return True when ``path`` contains every supporting module."""
+    return all(os.path.isfile(os.path.join(path, filename)) for filename in REQUIRED_MODULE_FILES)
+
+def default_support_directory() -> str:
+    """Return the most likely folder containing the supporting modules."""
+    try:
+        macro_dir = os.path.dirname(os.path.abspath(__file__))
+    except NameError:
+        macro_dir = os.getcwd()
+    if has_support_modules(macro_dir):
+        return macro_dir
+    cwd_main = os.path.join(os.getcwd(), "main")
+    if has_support_modules(cwd_main):
+        return cwd_main
+    return os.path.expanduser("~")
+
+def select_support_directory() -> str:
+    """Select the folder containing this macro's supporting Python modules."""
+    start_dir = default_support_directory()
+    if has_support_modules(start_dir):
+        return start_dir
+    required = ", ".join(REQUIRED_MODULE_FILES)
+    QtGui.QMessageBox.information(
+        None,
+        "3D GDS2 Converter",
+        "Select the folder containing the supporting Python modules:\n\n" + required,
+    )
+    while True:
+        selected = QtGui.QFileDialog.getExistingDirectory(
+            None,
+            "Select Supporting Modules Folder",
+            start_dir,
+        )
+        if not selected:
+            raise RuntimeError("No directory selected for supporting python modules. Macro aborted.")
+        if has_support_modules(selected):
+            return selected
+        QtGui.QMessageBox.warning(
+            None,
+            "Missing Supporting Modules",
+            "That folder does not contain all required module files:\n\n" + required,
+        )
+        start_dir = selected
+
+dir_path = select_support_directory()
+LOGGER.info("Working environment: %s", dir_path)
 sys.path.append(dir_path)
 
 import bulk as bulk
@@ -34,7 +87,7 @@ for _mod in ('input_files', 'supporting_functions', 'bulk', 'planarize'):
     try:
         importlib.reload(sys.modules[_mod])
     except KeyError:
-        print(f"Reload not needed for {_mod}")
+        LOGGER.debug("Reload not needed for %s", _mod)
 
 extrusion_lil1: List[str] = []
 feature_lil1: List[str] = []
@@ -66,7 +119,7 @@ def layer_develop(
     last-deposited arrays.
     """
 
-    print("layerDevelop Start")
+    LOGGER.info("Developing layer %s", layer_num)
     num_of_ext = len(extrusion_lil1)
     num_of_feat = len(feature_lil1)
     num_of_chamf = len(chamf_lil1)
@@ -83,7 +136,7 @@ def layer_develop(
             poly_layer = sp.get_xy_points(all_polygons_dict[layer_num][f])
             for point in poly_layer:
                 point.append(z_value[-1])
-            print("Before layerDevelop Object")
+            LOGGER.debug("Building feature geometry for layer %s polygon %d", layer_num, f)
             pts2=[]
             for i in range(0,len(poly_layer)):
                 pts2.append(FreeCAD.Vector(poly_layer[i][0],poly_layer[i][1],poly_layer[i][2]))
@@ -96,7 +149,7 @@ def layer_develop(
             feature_names.append("myFeature"+str(f+num_of_feat_names))
             feature_lil1.append(FreeCAD.ActiveDocument.addObject("Part::Feature", feature_names[f+num_of_feat_names]))
             feature_lil1[f+num_of_feat].Shape = extrusion_lil1[f+num_of_ext]
-            print("Before Chamfer")
+            LOGGER.debug("Preparing taper/chamfer for layer %s polygon %d", layer_num, f)
             loop1_break = False; loop2_break = False
             curved_call = False
             bottom_faces = []
@@ -128,7 +181,7 @@ def layer_develop(
                             corner_angle = math.degrees(math.acos(np.clip(np.dot(edge1_dir, edge2_dir)/ (np.linalg.norm(edge1_dir)* np.linalg.norm(edge2_dir)), -1, 1)))/90
 
                             if math.ceil(corner_angle) != math.floor(corner_angle):
-                                print("Non-rectangular object found, skipping taper")
+                                LOGGER.warning("Non-rectangular object found; skipping taper")
                                 chamf_names.append("newChamf"+str(len(chamf_names)))
                                 temp_name = chamf_names[-1]
                                 chamf_lil1.append(FreeCAD.ActiveDocument.addObject("Part::Feature", chamf_names[-1]))
@@ -155,12 +208,12 @@ def layer_develop(
                     reg_taper_pass = True
                 except:
                     reg_taper_pass = False
-                    print("Failed regular taper")
+                    LOGGER.warning("Failed regular taper", exc_info=True)
 
                 if reg_taper_pass:
                     FreeCAD.ActiveDocument.removeObject(temp_name)
                     chamf_names.pop(temp_index); chamf_lil1.pop(temp_index)
-            print("After Chamfer")
+            LOGGER.debug("Finished taper/chamfer for layer %s polygon %d", layer_num, f)
     elif len(FreeCAD.ActiveDocument.Objects) > 1:
         highest_point, highest_obj = sp.get_highest_point(True,False)
         dep_obj = FreeCAD.ActiveDocument.getObject(deposit_names[-1])
@@ -171,7 +224,7 @@ def layer_develop(
             poly_layer = sp.get_xy_points(all_polygons_dict[layer_num][f])
             for point in poly_layer:
                 point.append(z_value[-1])
-            print("Before layerDevelop Object")
+            LOGGER.debug("Building feature geometry for layer %s polygon %d", layer_num, f)
             pts2=[]
             for i in range(0,len(poly_layer)):
                 pts2.append(FreeCAD.Vector(poly_layer[i][0],poly_layer[i][1],poly_layer[i][2]))
@@ -192,7 +245,7 @@ def layer_develop(
 
             FreeCAD.ActiveDocument.removeObject("myCutObject")
 
-            print("Before Chamfer")
+            LOGGER.debug("Preparing taper/chamfer for layer %s polygon %d", layer_num, f)
             loop1_break = False; loop2_break = False
             curved_call = False
             bottom_faces = []
@@ -224,7 +277,7 @@ def layer_develop(
                             corner_angle = math.degrees(math.acos(np.clip(np.dot(edge1_dir, edge2_dir)/ (np.linalg.norm(edge1_dir)* np.linalg.norm(edge2_dir)), -1, 1)))/90
 
                             if math.ceil(corner_angle) != math.floor(corner_angle):
-                                print("Non-rectangular object found, skipping taper")
+                                LOGGER.warning("Non-rectangular object found; skipping taper")
                                 chamf_names.append("newChamf"+str(len(chamf_names)))
                                 temp_name = chamf_names[-1]
                                 chamf_lil1.append(FreeCAD.ActiveDocument.addObject("Part::Feature", chamf_names[-1]))
@@ -251,15 +304,15 @@ def layer_develop(
                     reg_taper_pass = True
                 except:
                     reg_taper_pass = False
-                    print("Failed regular taper")
+                    LOGGER.warning("Failed regular taper", exc_info=True)
 
                 if reg_taper_pass:
                     FreeCAD.ActiveDocument.removeObject(temp_name)
                     chamf_names.pop(temp_index); chamf_lil1.pop(temp_index)
-            print("After Chamfer")
+            LOGGER.debug("Finished taper/chamfer for layer %s polygon %d", layer_num, f)
         FreeCAD.ActiveDocument.removeObject("myStampingObject")
     else:
-        print("Invalid inputs, needs a substrate to deposit features on")
+        LOGGER.warning("Invalid inputs: a substrate is required before depositing features")
 
     z_value.append(z_value[-1]+layer_thickness)
     feature_copies = []
@@ -273,7 +326,7 @@ def layer_develop(
     layer_lil.append(FreeCAD.ActiveDocument.addObject("Part::Feature", layer_names[-1]))
     layer_lil[-1].Shape = layer_copy
     last_deposited.append(layer_lil[-1])
-    print("layerDevelop End")
+    LOGGER.info("Layer %s complete", layer_num)
     return layer_lil[-1]
 
 def deposit(
@@ -287,7 +340,7 @@ def deposit(
     thickness, and last-deposited arrays.
     """
 
-    print("deposit Begin")
+    LOGGER.info("Depositing blanket layer over %s at thickness %s", sub_layer, dep_thickness)
 
     if dep_thickness > layer_thickness_arr[-1]:
         z_value[-1] = z_value[-2] + dep_thickness
@@ -332,7 +385,7 @@ def deposit(
         deposit_names.append("myDeposit"+str(len(deposit_names)))
         deposit_lil.append(FreeCAD.ActiveDocument.addObject("Part::Feature", deposit_names[-1]))
         deposit_lil[-1].Shape = dep3
-    print("deposit End")
+    LOGGER.info("Deposition complete")
     last_deposited.append(deposit_lil[-1])
     return deposit_lil[-1]
 
@@ -409,7 +462,7 @@ def taper(polygon: Any, layer_thickness: float, angle: float, top_obj: str) -> A
         if len(bottom_faces) == 0:
             bad = FreeCAD.ActiveDocument.addObject("Part::Feature", "BreakingStuff")
             bad.Shape = polygon
-            print("What is this shape?")
+            LOGGER.warning("No bottom faces found while tapering feature")
         elif len(bottom_faces) == 1:
 
             temp_obj = bottom_faces[0].extrude(Base.Vector(0,0,layer_thickness))
@@ -525,7 +578,7 @@ def taper(polygon: Any, layer_thickness: float, angle: float, top_obj: str) -> A
 
             for counter, poly_shape in enumerate(cleaned_separate_obj):
 
-                print("At start of object separation")
+                LOGGER.debug("Starting object separation for taper segment %d", counter)
                 for face in poly_shape.Faces:
                     if face.distToShape(top_obj.Shape)[0] > .1:
                         face_to_inspect2 = face
@@ -547,7 +600,7 @@ def taper(polygon: Any, layer_thickness: float, angle: float, top_obj: str) -> A
                             edge_list2.append(edge_to_add)
                             break
 
-                print("After edge selection")
+                LOGGER.debug("Selected taper edges for segment %d", counter)
                 poly_feature = FreeCAD.ActiveDocument.addObject("Part::Feature", "SillyName"+str(counter))
                 poly_feature.Shape = poly_shape
                 chamf_names.append("myChamf"+str(counter+num_of_chamf_names2))
@@ -563,7 +616,7 @@ def taper(polygon: Any, layer_thickness: float, angle: float, top_obj: str) -> A
                             edge_nums.append(indexing)
                             break
 
-                print("After edge indexing ")
+                LOGGER.debug("Indexed taper edges for segment %d", counter)
 
                 flat = False
                 my_edges = []
@@ -602,7 +655,7 @@ def taper(polygon: Any, layer_thickness: float, angle: float, top_obj: str) -> A
                 chamf_lil1.append(FreeCAD.ActiveDocument.addObject("Part::Feature", chamf_names[-1]))
                 chamf_lil1[-1].Shape = new_chamf.Shape
                 FreeCAD.ActiveDocument.removeObject("tempChamf")
-                print("After obj chamfer")
+                LOGGER.debug("Finished chamfer for taper segment %d", counter)
 
 def taper_over_holes(polygon: Any, layer_thickness: float, angle: float, top_obj: str) -> Any:
     """Chamfer a feature that interacts with vias.
@@ -610,7 +663,7 @@ def taper_over_holes(polygon: Any, layer_thickness: float, angle: float, top_obj
     Updates the global chamfer shape and name arrays.
     """
 
-    print("taperOverHoles begin")
+    LOGGER.info("Tapering feature over holes")
     num_of_ext2 = len(extrusion_lil1)-1
     num_of_feat2 = len(feature_lil1)-1
     num_of_chamf2 = len(chamf_lil1)
@@ -645,18 +698,18 @@ def taper_over_holes(polygon: Any, layer_thickness: float, angle: float, top_obj
         if len(bottom_faces) == 0:
             bad = FreeCAD.ActiveDocument.addObject("Part::Feature", "BreakingStuff")
             bad.Shape = polygon
-            print("What is this shape?")
+            LOGGER.warning("No bottom faces found while tapering feature over holes")
         elif len(bottom_faces) == 1:
 
             temp_obj = bottom_faces[0].extrude(Base.Vector(0,0,layer_thickness))
 
-            print("Only 1 bottom face found")
+            LOGGER.debug("One bottom face found while tapering over holes")
             original_obj = polygon.Shape.copy()
             just_holes = original_obj.cut(temp_obj)
             hole_sections = just_holes
 
             if len(just_holes.Faces) == 0:
-                print("No holes present inside taper function")
+                LOGGER.debug("No holes present inside taper-over-holes path")
                 poly_feature = FreeCAD.ActiveDocument.addObject("Part::Feature", "SillyName"+str(len(chamf_names)))
                 poly_feature.Shape = temp_obj
                 chamf_names.append("myChamf"+str(len(chamf_names)))
@@ -698,9 +751,9 @@ def taper_over_holes(polygon: Any, layer_thickness: float, angle: float, top_obj
                 chamf_lil1.append(FreeCAD.ActiveDocument.addObject("Part::Feature", chamf_names[-1]))
                 chamf_lil1[-1].Shape = new_chamf.Shape
                 FreeCAD.ActiveDocument.removeObject("tempChamf")
-                print("After obj chamfer")
+                LOGGER.debug("Finished chamfer for feature over holes")
             else:
-                print("Holes found within layer")
+                LOGGER.info("Holes found within layer")
                 poly_feature = FreeCAD.ActiveDocument.addObject("Part::Feature", "SillyName"+str(len(chamf_names)))
                 poly_feature.Shape = temp_obj
                 chamf_names.append("myChamf"+str(len(chamf_names)))
@@ -740,8 +793,8 @@ def taper_over_holes(polygon: Any, layer_thickness: float, angle: float, top_obj
                         if edge_main.firstVertex().Point == edge_face.firstVertex().Point and edge_main.lastVertex().Point == edge_face.lastVertex().Point:
                             edge_nums.append(indexing)
                             break
-                print(edge_nums)
-                print("After edge indexing ")
+                LOGGER.debug("Chamfer edge numbers: %s", edge_nums)
+                LOGGER.debug("Indexed taper-over-holes edges")
 
                 my_edges = []
                 for i in range(0, len(edge_nums)):
@@ -763,7 +816,7 @@ def taper_over_holes(polygon: Any, layer_thickness: float, angle: float, top_obj
                 chamf_lil1.append(FreeCAD.ActiveDocument.addObject("Part::Feature", chamf_names[-1]))
                 chamf_lil1[-1].Shape = new_chamf.Shape
                 FreeCAD.ActiveDocument.removeObject("tempChamf")
-                print("After obj chamfer")
+                LOGGER.debug("Finished chamfer for feature over holes")
         else:
             bot_face_rem = []
             hole_faces = []
@@ -896,7 +949,7 @@ def taper_over_holes(polygon: Any, layer_thickness: float, angle: float, top_obj
 
             for counter, poly_shape in enumerate(cleaned_separate_obj):
 
-                print("At start of object separation")
+                LOGGER.debug("Starting object separation for hole taper segment %d", counter)
                 for face in poly_shape.Faces:
                     if face.distToShape(top_obj.Shape)[0] > .1:
                         face_to_inspect2 = face
@@ -933,7 +986,7 @@ def taper_over_holes(polygon: Any, layer_thickness: float, angle: float, top_obj
                 for rem in sorted(rem_hole_edge, reverse=True):
                     del edge_list2[rem]
 
-                print("After edge selection")
+                LOGGER.debug("Selected hole taper edges for segment %d", counter)
                 poly_feature = FreeCAD.ActiveDocument.addObject("Part::Feature", "SillyName"+str(counter))
                 poly_feature.Shape = poly_shape
                 chamf_names.append("myChamf"+str(counter+num_of_chamf_names2))
@@ -947,8 +1000,8 @@ def taper_over_holes(polygon: Any, layer_thickness: float, angle: float, top_obj
                     for edge_face in edge_list2:
                         if edge_main.firstVertex().Point == edge_face.firstVertex().Point and edge_main.lastVertex().Point == edge_face.lastVertex().Point:
                             edge_nums.append(indexing)
-                print(edge_nums)
-                print("After edge indexing ")
+                LOGGER.debug("Hole taper edge numbers: %s", edge_nums)
+                LOGGER.debug("Indexed hole taper edges for segment %d", counter)
 
                 my_edges = []
 
@@ -971,7 +1024,7 @@ def taper_over_holes(polygon: Any, layer_thickness: float, angle: float, top_obj
                 else:
 
                     ang_height = edge_list2[0].firstVertex().distToShape(dep_obj2.Shape)[0]
-                    print(ang_height)
+                    LOGGER.debug("Hole taper angled height: %s", ang_height)
                     for i in edge_nums:
 
                         my_edges.append((i,(ang_height)-.00002,layer_thickness*math.tan(angle)))
@@ -994,7 +1047,7 @@ def taper_over_holes(polygon: Any, layer_thickness: float, angle: float, top_obj
                 chamf_lil1.append(FreeCAD.ActiveDocument.addObject("Part::Feature", chamf_names[-1]))
                 chamf_lil1[-1].Shape = new_chamf.Shape
                 FreeCAD.ActiveDocument.removeObject("tempChamf")
-                print("After obj chamfer")
+                LOGGER.debug("Finished hole taper chamfer for segment %d", counter)
 
         if len(hole_sections.Faces) != 0:
 
@@ -1044,7 +1097,7 @@ def hole_creation(
 
         for point in poly_layer:
             point.append(z_val)
-        print("Before layerDevelop Object")
+        LOGGER.debug("Building hole geometry for layer %s polygon %d", layer_num, f)
 
         pts=[]
         for i in range(0,len(poly_layer)):
@@ -1056,7 +1109,7 @@ def hole_creation(
 
         extrusion_lil1.append(face.extrude(Base.Vector(0,0,layer_thickness+.1)))
 
-        print("Before Chamfer")
+        LOGGER.debug("Preparing hole chamfer for layer %s polygon %d", layer_num, f)
         hole_names.append("myHole"+str(len(hole_names)))
         hole_lil.append(FreeCAD.ActiveDocument.addObject("Part::Feature", hole_names[-1]))
         hole_lil[-1].Shape = extrusion_lil1[-1]
@@ -1084,18 +1137,18 @@ def hole_creation(
         chamf_lil1[-1].Edges = my_edges
         FreeCAD.ActiveDocument.recompute()
         if f == 0:
-            print("First hole found")
+            LOGGER.debug("First hole found")
             hole_fuse = chamf_lil1[-1].Shape
 
             FreeCAD.ActiveDocument.removeObject(chamf_names[-1])
         elif f >0:
-            print("Multiple holes founds")
+            LOGGER.debug("Additional hole found")
             hole_fuse = hole_fuse.fuse(chamf_lil1[-1].Shape)
             FreeCAD.ActiveDocument.removeObject(chamf_names[-1])
         else:
-            print("No holes present")
+            LOGGER.warning("No holes present")
         FreeCADGui.ActiveDocument.getObject(hole_names[-1]).Visibility = False
-        print("After Chamfer")
+        LOGGER.debug("Finished hole chamfer for layer %s polygon %d", layer_num, f)
     whole_layer = hole_layer.cut(hole_fuse)
     FreeCADGui.ActiveDocument.getObject(hole_layer_name.Label).Visibility = False
     labels = [obj.Label for obj in FreeCAD.ActiveDocument.Objects]
@@ -1123,7 +1176,7 @@ def hole_develop(
     Updates the global feature, layer, thickness, Z-position, and
     last-deposited arrays.
     """
-    print("holeDevelop Start")
+    LOGGER.info("Developing layer %s over existing holes", layer_num)
     feature_names2= []; feature_lil2 = []
     layer_thickness_arr.append(layer_thickness)
     highest_point, highest_obj = sp.get_highest_point(True,False)
@@ -1139,7 +1192,7 @@ def hole_develop(
         poly_layer = sp.get_xy_points(all_polygons_dict[layer_num][f])
         for point in poly_layer:
             point.append(0)
-        print("Before layerDevelop Object")
+        LOGGER.debug("Building over-hole feature geometry for layer %s polygon %d", layer_num, f)
         pts2=[]
         for i in range(0,len(poly_layer)):
             pts2.append(FreeCAD.Vector(poly_layer[i][0],poly_layer[i][1],poly_layer[i][2]))
@@ -1173,7 +1226,7 @@ def hole_develop(
         feature_lil1.append(FreeCAD.ActiveDocument.addObject("Part::Feature", feature_names[-1]))
         feature_lil1[-1].Shape = extrusion_lil1[-1]
         feature_lil1[-1].Visibility = False
-        print("Before Chamfer")
+        LOGGER.debug("Preparing over-hole taper/chamfer for layer %s polygon %d", layer_num, idy)
         loop1_break = False; loop2_break = False
         curved_call = False
         bottom_faces = []
@@ -1205,7 +1258,7 @@ def hole_develop(
                         corner_angle = math.degrees(math.acos(np.clip(np.dot(edge1_dir, edge2_dir)/ (np.linalg.norm(edge1_dir)* np.linalg.norm(edge2_dir)), -1, 1)))/90
 
                         if math.ceil(corner_angle) != math.floor(corner_angle):
-                            print("Non-rectangular object found, skipping taper")
+                            LOGGER.warning("Non-rectangular object found; skipping taper")
                             chamf_names.append("newChamf"+str(len(chamf_names)))
                             temp_name = chamf_names[-1]
                             chamf_lil1.append(FreeCAD.ActiveDocument.addObject("Part::Feature", chamf_names[-1]))
@@ -1232,12 +1285,12 @@ def hole_develop(
                 reg_taper_pass = True
             except:
                 reg_taper_pass = False
-                print("Failed regular taper")
+                LOGGER.warning("Failed regular taper", exc_info=True)
 
             if reg_taper_pass:
                 FreeCAD.ActiveDocument.removeObject(temp_name)
                 chamf_names.pop(temp_index); chamf_lil1.pop(temp_index)
-        print("After Chamfer")
+        LOGGER.debug("Finished over-hole taper/chamfer for layer %s polygon %d", layer_num, idy)
     FreeCAD.ActiveDocument.removeObject(deposit_lil[-1].Label)
     deposit_lil.pop()
     deposit_names.pop()
@@ -1255,9 +1308,9 @@ def hole_develop(
     layer_names.append("myLayer"+str(len(layer_names)))
     layer_lil.append(FreeCAD.ActiveDocument.addObject("Part::Feature", layer_names[-1]))
     layer_lil[-1].Shape = layer_copy
-    print("layerDevelop End")
+    LOGGER.info("Layer %s over holes complete", layer_num)
     last_deposited.append(layer_lil[-1])
-    print("holeDevelop End")
+    LOGGER.info("Hole-layer development complete")
     return layer_lil[-1]
 
 def evaluate_xs_file(
@@ -1267,7 +1320,7 @@ def evaluate_xs_file(
     lyp_info: Union[Dict[str, List[Optional[str]]], str],
 ) -> None:
     """Evaluate the KLayout XSection script against parsed GDS polygons."""
-    print("evaluate_xs_file Begin")
+    LOGGER.info("Evaluating XSection script: %s", filepath)
     outline_hold = [[0,0],[0,0]]
     for poly in all_polygons_dict:
         outline = sp.get_outline_values(all_polygons_dict[poly][0])
@@ -1293,16 +1346,16 @@ def evaluate_xs_file(
 
         line = line.replace(" ","")
         if (line[0] == "#") or (line.isspace() == True):
-            print("Skipping line number %d" % (counter+1))
+            LOGGER.debug("Skipping XSection line %d", counter + 1)
             continue
-        print("Executing line number %d: %s" % ((counter+1),line))
+        LOGGER.debug("Executing XSection line %d: %s", counter + 1, line.rstrip())
         if deposit_line == True and (counter != len(text)-1):
             if "planarize" in text[counter+1]:
                 deposit_line = False
                 continue
 
             if "deposit" in line:
-                print("Running Deposition")
+                LOGGER.info("Running deposition command")
 
                 var_names.append([line.split("=")[0],deposit(all_polygons_dict, outline_layer, deposit_thickness)])
                 deposit_line = False
@@ -1327,7 +1380,7 @@ def evaluate_xs_file(
             xs_layer_names[-1][1] = sp.layer_name(line.split("\"")[1].split(")")[0])
 
         elif "deposit(" in line:
-            print("Found Deposition")
+            LOGGER.debug("Found deposition command")
             deposit_line = True
 
             line_var = line.split("(")[1].split(")")[0]
@@ -1351,7 +1404,7 @@ def evaluate_xs_file(
                 if str(var[0]) == str(lay_var):
                     xs_layer_name = xs_layer_names[idx][1]
                     break
-            print("Lay thick is %s and xslayerName is %s" % (layer_thickness, xs_layer_name))
+            LOGGER.info("Etching layer %s at thickness %s", xs_layer_name, layer_thickness)
             if "taper" in etch_arg:
                 ang = etch_arg.split(":taper=>")[1].split(",")[0]
 
@@ -1370,7 +1423,7 @@ def evaluate_xs_file(
 
             if "inverted" in line:
                 if len(hole_lil) == 0:
-                    print("No holes before deposition")
+                    LOGGER.debug("No holes found before deposition")
 
                     for idx, grouping in enumerate(var_names):
                         if grouping[1] == 0:
@@ -1388,13 +1441,13 @@ def evaluate_xs_file(
                 if "into" in etch_arg:
                     hole_lay_name = etch_arg.split(":into=>")[1].split(")")[0]
                     for idx, var in enumerate(var_names):
-                        print("Comparing " + str(var[0]) + " to " +str(hole_lay_name))
+                        LOGGER.debug("Comparing output variable %s to target %s", var[0], hole_lay_name)
                         if str(var[0]) == str(hole_lay_name) and var_names[idx][1] != 0:
                             hole_lay = var_names[idx][1]
 
                             break
                 else:
-                    print("Missing the layer to cut into")
+                    LOGGER.warning("Missing the layer to cut into")
                 if len(hole_lil) > 0 and bias_val != 0:
                     bias_val = bias_val
 
@@ -1408,7 +1461,7 @@ def evaluate_xs_file(
             last_deposited.append(planar_lay)
             sp.remove_objs()
         elif "output" in line:
-            print("Incomplete, but might not be necessary?")
+            LOGGER.info("output() directives are currently ignored")
         else:
             line = line.rstrip()
             xs_variables.append([line.split("=")[0],0])
@@ -1481,70 +1534,140 @@ def evaluate_xs_file(
         for obj in FreeCAD.ActiveDocument.Objects:
             final_path = output_path+"/"+obj.Label+".step"
             Part.export([obj], final_path)
-    print("evaluate_xs_file End")
+    LOGGER.info("XSection evaluation complete")
 
 class Inputs(QtGui.QDialog):
     """Modal dialog that collects the GDS2, LYP and XS file paths."""
 
-    input_files: List[str] = [""] * 3
-
     def __init__(self) -> None:
         super(Inputs, self).__init__()
+        self.input_files: List[str] = [""] * 3
+        self.last_dir = os.path.dirname(dir_path)
         self.init_ui()
 
     def init_ui(self) -> None:
-        gds_input = QtGui.QPushButton("GDS2 File (.txt)")
-        gds_input.clicked.connect(self.gds_input_clicked)
-        lyp_input = QtGui.QPushButton("LYP File (.lyp)")
-        lyp_input.clicked.connect(self.lyp_input_clicked)
-        xs_input = QtGui.QPushButton("XS Script (.xs)")
-        xs_input.clicked.connect(self.xs_input_clicked)
-        done = QtGui.QPushButton("Finished")
+        heading = QtGui.QLabel("Choose the files for this conversion.")
+        detail = QtGui.QLabel("The GDS2 text export and XSection script are required. The layer properties file is optional.")
+        detail.setWordWrap(True)
 
-        done.clicked.connect(self.finished_clicked)
+        self.gds_path = self.build_path_field("Required: GDS2 text export (.txt)")
+        self.lyp_path = self.build_path_field("Optional: KLayout layer properties (.lyp)")
+        self.xs_path = self.build_path_field("Required: XSection script (.xs)")
 
-        button_box = QtGui.QDialogButtonBox(QtCore.Qt.Horizontal)
-        button_box.addButton(gds_input, QtGui.QDialogButtonBox.ActionRole)
-        button_box.addButton(lyp_input, QtGui.QDialogButtonBox.ActionRole)
-        button_box.addButton(xs_input, QtGui.QDialogButtonBox.ActionRole)
-        button_box.addButton(done, QtGui.QDialogButtonBox.ActionRole)
+        gds_button = QtGui.QPushButton("Browse...")
+        gds_button.clicked.connect(self.gds_input_clicked)
+        lyp_button = QtGui.QPushButton("Browse...")
+        lyp_button.clicked.connect(self.lyp_input_clicked)
+        xs_button = QtGui.QPushButton("Browse...")
+        xs_button.clicked.connect(self.xs_input_clicked)
+        clear_lyp = QtGui.QPushButton("Clear")
+        clear_lyp.clicked.connect(self.clear_lyp_clicked)
+
+        file_grid = QtGui.QGridLayout()
+        file_grid.addWidget(QtGui.QLabel("GDS2 text"), 0, 0)
+        file_grid.addWidget(self.gds_path, 0, 1)
+        file_grid.addWidget(gds_button, 0, 2)
+        file_grid.addWidget(QtGui.QLabel("Layer properties"), 1, 0)
+        file_grid.addWidget(self.lyp_path, 1, 1)
+        file_grid.addWidget(lyp_button, 1, 2)
+        file_grid.addWidget(clear_lyp, 1, 3)
+        file_grid.addWidget(QtGui.QLabel("XSection script"), 2, 0)
+        file_grid.addWidget(self.xs_path, 2, 1)
+        file_grid.addWidget(xs_button, 2, 2)
+
+        button_box = QtGui.QDialogButtonBox(QtGui.QDialogButtonBox.Ok | QtGui.QDialogButtonBox.Cancel)
+        button_box.accepted.connect(self.finished_clicked)
+        button_box.rejected.connect(self.reject)
+        ok_button = button_box.button(QtGui.QDialogButtonBox.Ok)
+        if ok_button is not None:
+            ok_button.setText("Run Conversion")
 
         main_layout = QtGui.QVBoxLayout()
+        main_layout.addWidget(heading)
+        main_layout.addWidget(detail)
+        main_layout.addLayout(file_grid)
         main_layout.addWidget(button_box)
         self.setLayout(main_layout)
-        self.setGeometry(250, 250, 0, 50)
-        self.setWindowTitle("Select the Input Files")
+        self.resize(760, 170)
+        self.setWindowTitle("3D GDS2 Converter Inputs")
         self.setWindowFlags(QtCore.Qt.WindowStaysOnTopHint)
 
-    def gds_input_clicked(self) -> None:
-        filename, _ = QtGui.QFileDialog.getOpenFileName(
-            parent=self, caption='Open file', dir=dir_path, filter='*.txt'
+    def build_path_field(self, placeholder: str) -> Any:
+        """Create a read-only path preview field."""
+        field = QtGui.QLineEdit()
+        field.setReadOnly(True)
+        field.setPlaceholderText(placeholder)
+        field.setMinimumWidth(420)
+        return field
+
+    def select_file(self, caption: str, file_filter: str) -> str:
+        """Show a file picker and return the selected path."""
+        result = QtGui.QFileDialog.getOpenFileName(
+            parent=self,
+            caption=caption,
+            dir=self.last_dir,
+            filter=file_filter,
         )
+        filename = result[0] if isinstance(result, tuple) else result
         if filename:
-            self.input_files[0] = filename
+            self.last_dir = os.path.dirname(filename)
+        return filename
+
+    def set_input_file(self, index: int, field: Any, filename: str) -> None:
+        """Store ``filename`` and refresh the matching path preview."""
+        if filename:
+            self.input_files[index] = filename
+            field.setText(filename)
+            field.setToolTip(filename)
+
+    def gds_input_clicked(self) -> None:
+        filename = self.select_file(
+            "Select GDS2 Text Export",
+            "GDS2 text export (*.txt);;All files (*)",
+        )
+        self.set_input_file(0, self.gds_path, filename)
 
     def lyp_input_clicked(self) -> None:
-        filename, _ = QtGui.QFileDialog.getOpenFileName(
-            parent=self, caption='Open file', dir=dir_path, filter='*.lyp'
+        filename = self.select_file(
+            "Select KLayout Layer Properties",
+            "KLayout layer properties (*.lyp);;All files (*)",
         )
-        if filename:
-            self.input_files[1] = filename
+        self.set_input_file(1, self.lyp_path, filename)
 
     def xs_input_clicked(self) -> None:
-        filename, _ = QtGui.QFileDialog.getOpenFileName(
-            parent=self, caption='Open file', dir=dir_path, filter='*.xs'
+        filename = self.select_file(
+            "Select XSection Script",
+            "XSection script (*.xs);;All files (*)",
         )
-        if filename:
-            self.input_files[2] = filename
+        self.set_input_file(2, self.xs_path, filename)
+
+    def clear_lyp_clicked(self) -> None:
+        self.input_files[1] = ""
+        self.lyp_path.clear()
+        self.lyp_path.setToolTip("")
 
     def finished_clicked(self) -> None:
+        missing = []
         if self.input_files[0] == "":
-            QtGui.QMessageBox.information(None, "", "Please select a gds2 (.txt) file.")
-            self.gds_input_clicked()
+            missing.append("GDS2 text export (.txt)")
         if self.input_files[2] == "":
-            QtGui.QMessageBox.information(None, "", "Please select a XS script (.xs).")
-            self.xs_input_clicked()
-        self.close()
+            missing.append("XSection script (.xs)")
+        if missing:
+            QtGui.QMessageBox.warning(
+                self,
+                "Missing Required Files",
+                "Select the required file(s):\n\n" + "\n".join(missing),
+            )
+            return
+        invalid = [path for path in self.input_files if path and not os.path.isfile(path)]
+        if invalid:
+            QtGui.QMessageBox.warning(
+                self,
+                "File Not Found",
+                "These selected files could not be found:\n\n" + "\n".join(invalid),
+            )
+            return
+        self.accept()
 
 class Exports(QtGui.QDialog):
     """Asks the user whether to export each layer as a STEP file."""
@@ -1557,44 +1680,77 @@ class Exports(QtGui.QDialog):
         self.init_ui()
 
     def init_ui(self) -> None:
-        affirmative = QtGui.QPushButton("Affirmative")
-        affirmative.clicked.connect(self.affirmative_clicked)
-        negative = QtGui.QPushButton("Negative")
-        negative.clicked.connect(self.negative_clicked)
+        default_output = os.path.abspath(os.path.join(dir_path, os.pardir, "output"))
+        heading = QtGui.QLabel("STEP export")
+        detail = QtGui.QLabel("Enable export to write one STEP file per visible final object.")
+        detail.setWordWrap(True)
 
-        button_box = QtGui.QDialogButtonBox(QtCore.Qt.Horizontal)
-        button_box.addButton(affirmative, QtGui.QDialogButtonBox.ActionRole)
-        button_box.addButton(negative, QtGui.QDialogButtonBox.ActionRole)
+        self.export_enabled = QtGui.QCheckBox("Export STEP files after conversion")
+        self.export_enabled.setChecked(True)
+        self.export_enabled.stateChanged.connect(self.export_state_changed)
+        self.output_path = QtGui.QLineEdit(default_output)
+        self.output_path.setMinimumWidth(420)
+        self.output_path.setToolTip(default_output)
+        browse_button = QtGui.QPushButton("Browse...")
+        browse_button.clicked.connect(self.affirmative_clicked)
+        self.browse_button = browse_button
+
+        path_layout = QtGui.QHBoxLayout()
+        path_layout.addWidget(self.output_path)
+        path_layout.addWidget(browse_button)
+
+        button_box = QtGui.QDialogButtonBox(QtGui.QDialogButtonBox.Ok | QtGui.QDialogButtonBox.Cancel)
+        button_box.accepted.connect(self.finished_clicked)
+        button_box.rejected.connect(self.reject)
+        ok_button = button_box.button(QtGui.QDialogButtonBox.Ok)
+        if ok_button is not None:
+            ok_button.setText("Continue")
 
         main_layout = QtGui.QVBoxLayout()
+        main_layout.addWidget(heading)
+        main_layout.addWidget(detail)
+        main_layout.addWidget(self.export_enabled)
+        main_layout.addLayout(path_layout)
         main_layout.addWidget(button_box)
         self.setLayout(main_layout)
-        self.setGeometry(250, 250, 350, 50)
-        self.setWindowTitle("Export objects as STEP files?")
+        self.resize(700, 150)
+        self.setWindowTitle("3D GDS2 Converter Export")
         self.setWindowFlags(QtCore.Qt.WindowStaysOnTopHint)
 
     def affirmative_clicked(self) -> None:
-        QtGui.QMessageBox.information(None, "", "Please select an output folder.")
         directory_name = QtGui.QFileDialog.getExistingDirectory(
-            parent=self, caption='Select Directory', dir=dir_path
+            parent=self,
+            caption='Select STEP Output Folder',
+            dir=self.output_path.text() or dir_path,
         )
         if directory_name:
-            self.output_files = directory_name
-            self.ret_status = 1
-            self.close()
-        else:
-            QtGui.QMessageBox.information(None, "", "Please select an output folder.")
-            self.affirmative_clicked()
+            self.output_path.setText(directory_name)
+            self.output_path.setToolTip(directory_name)
 
-    def negative_clicked(self) -> None:
-        QtGui.QMessageBox.information(None, "", "No automatic exports will be made.")
-        self.output_files = ""
-        self.close()
+    def export_state_changed(self, state: int) -> None:
+        enabled = state == QtCore.Qt.Checked
+        self.output_path.setEnabled(enabled)
+        self.browse_button.setEnabled(enabled)
+
+    def finished_clicked(self) -> None:
+        if not self.export_enabled.isChecked():
+            self.output_files = ""
+            self.accept()
+            return
+        directory_name = self.output_path.text().strip()
+        if directory_name == "":
+            QtGui.QMessageBox.warning(self, "Missing Output Folder", "Select an output folder or disable STEP export.")
+            return
+        os.makedirs(directory_name, exist_ok=True)
+        self.output_files = directory_name
+        self.ret_status = 1
+        self.accept()
 
 if True:
-    print("Program Begin")
+    LOGGER.info("Program begin")
     file_in = Inputs()
-    file_in.exec_()
+    if file_in.exec_() != QtGui.QDialog.Accepted:
+        raise RuntimeError("Input selection cancelled. Macro aborted.")
     gds2_filepath: str = file_in.input_files[0]
     all_polygons_dict = files.extract_gds2_info(gds2_filepath)
     lyp_info: Union[Dict[str, List[Optional[str]]], str]
@@ -1605,8 +1761,9 @@ if True:
         lyp_info = ""
     xs_filepath: str = file_in.input_files[2]
     file_out = Exports()
-    file_out.exec_()
+    if file_out.exec_() != QtGui.QDialog.Accepted:
+        raise RuntimeError("Export selection cancelled. Macro aborted.")
     export_path: str = file_out.output_files
     App.newDocument("Conversion")
     evaluate_xs_file(xs_filepath, all_polygons_dict, export_path, lyp_info)
-    print("Program End")
+    LOGGER.info("Program end")

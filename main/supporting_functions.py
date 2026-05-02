@@ -1,12 +1,15 @@
 """Supporting helpers used across the GDS2 -> 3D conversion modules."""
 from __future__ import annotations
 
+import logging
 import math
 from typing import Any, List, Tuple, Union, overload
 
 import FreeCAD
 import numpy as np
 import Part
+
+LOGGER = logging.getLogger("gds2converter.supporting_functions")
 
 class Polygon:
     """A 2D polygon parsed from the GDS2 text export.
@@ -24,8 +27,8 @@ def output(layer: Any, features: Any) -> None:
 
     Currently unused by the FreeCAD conversion pipeline.
     """
-    print("Output begin")
-    print("Output end")
+    LOGGER.debug("Output begin")
+    LOGGER.debug("Output end")
 
 def get_xy_points(polygon: Polygon) -> List[List[float]]:
     """Convert ``polygon``'s integer GDS units to mm-scale float pairs.
@@ -33,18 +36,18 @@ def get_xy_points(polygon: Polygon) -> List[List[float]]:
     Division by 10 is the .001-micron scale factor referenced in the README;
     change here (and only here) to retarget a different working scale.
     """
-    print("get_xy_points Begin")
+    LOGGER.debug("get_xy_points begin")
     pts: List[List[float]] = []
     for i in range(0, len(polygon.x)):
         x = polygon.x[i] / 10
         y = polygon.y[i] / 10
         pts.append([x, y])
-    print("get_xy_points end")
+    LOGGER.debug("get_xy_points end")
     return pts
 
 def get_2d_outer_bounds() -> List[Tuple[float, float]]:
     """Return the outermost (xmin, ymin) ... (xmin, ymax) corners of the model."""
-    print("get_2D_outer_bounds")
+    LOGGER.debug("get_2d_outer_bounds begin")
     all_points_nested = [
         [vertex.Point for vertex in obj.Shape.Vertexes]
         for obj in FreeCAD.ActiveDocument.Objects
@@ -62,12 +65,12 @@ def get_2d_outer_bounds() -> List[Tuple[float, float]]:
         (x_max, y_max),
         (x_min, y_max),
     ]
-    print("get_2D_outer_bounds end")
+    LOGGER.debug("get_2d_outer_bounds end")
     return outer_bounds
 
 def get_outline_values(polygon: Polygon) -> List[List[float]]:
     """Return ``[[xmin, ymin], [xmax, ymax]]`` for the passed polygon (mm scale)."""
-    print("getOutlineValues Begin")
+    LOGGER.debug("get_outline_values begin")
     all_points: List[List[float]] = []
     for i in range(0, len(polygon.x)):
         x = polygon.x[i] / 10
@@ -80,7 +83,7 @@ def get_outline_values(polygon: Polygon) -> List[List[float]]:
     y_min = min(ys)
     y_max = max(ys)
     outer_bounds: List[List[float]] = [[x_min, y_min], [x_max, y_max]]
-    print("getOutlineValues end")
+    LOGGER.debug("get_outline_values end")
     return outer_bounds
 
 @overload
@@ -193,8 +196,8 @@ def bias_features(feature: Any, bias: float) -> Any:
       * Requires an even number of edges; complex polygons (>=6 edges)
         rely on inside/outside-edge classification.
     """
-    print("Bias begin")
-    print("bias = %f" % bias)
+    LOGGER.debug("Bias begin")
+    LOGGER.debug("Bias value: %f", bias)
 
     bounds = get_2d_outer_bounds()
     x_low = bounds[0][0]
@@ -316,7 +319,7 @@ def bias_features(feature: Any, bias: float) -> Any:
                              or edge1_last[1] == low_y or edge1_last[1] == high_y)
                     )
                     if on_outside:
-                        print("Edge on outside")
+                        LOGGER.debug("Edge on outside")
                         orig_dist = edge1.distToShape(edge2)[0]
                         temp_pts = [
                             FreeCAD.Vector(edge1_first[0] + bias, edge1_first[1], Z),
@@ -357,7 +360,7 @@ def bias_features(feature: Any, bias: float) -> Any:
                           or (edge2_first[1] == edge2_last[1] == low_y)
                           or (edge2_first[1] == edge2_last[1] == high_y)):
 
-                        print("Inside edge found")
+                        LOGGER.debug("Inside edge found")
                         orig_dist = edge1.distToShape(edge2)[0]
                         temp_pts = [
                             FreeCAD.Vector(edge1_first[0] + bias, edge1_first[1], Z),
@@ -415,5 +418,5 @@ def bias_features(feature: Any, bias: float) -> Any:
     pts = [FreeCAD.Vector(v[0], v[1], v[2]) for v in final_verts]
     wire = Part.makePolygon(pts)
     face = Part.Face(wire)
-    print("Bias end")
+    LOGGER.debug("Bias end")
     return face

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib
+import logging
 import sys
 from typing import TYPE_CHECKING, Any, Dict
 
@@ -9,10 +10,12 @@ import FreeCAD
 import Part
 from FreeCAD import Base
 
+LOGGER = logging.getLogger("gds2converter.bulk")
+
 try:
     importlib.reload(sys.modules['supporting_functions'])
 except KeyError:
-    print("Reload not needed for supporting_functions")
+    LOGGER.debug("Reload not needed for supporting_functions")
 
 import supporting_functions as sp
 
@@ -24,9 +27,9 @@ def bulk(all_polygons_dict: Dict[str, list["Polygon"]], layer_num: str) -> Any:
 
     Returns the substrate ``Shape``.
     """
-    print("bulk start")
+    LOGGER.info("Creating substrate from layer %s", layer_num)
     if FreeCAD.ActiveDocument.Objects == []:
-        print("Before Substrate")
+        LOGGER.debug("Building substrate face")
         poly1 = sp.get_xy_points(all_polygons_dict[layer_num][0])
         for point in poly1:
             point.append(0.0)
@@ -38,6 +41,6 @@ def bulk(all_polygons_dict: Dict[str, list["Polygon"]], layer_num: str) -> Any:
         substrate = FreeCAD.ActiveDocument.addObject("Part::Feature", "Substrate")
         substrate.Shape = sub_extrusion
     else:
-        print("A substrate already exists and another cannot be generated.")
-    print("bulk end")
+        LOGGER.warning("A substrate already exists and another cannot be generated.")
+    LOGGER.info("Substrate generation complete")
     return substrate.Shape

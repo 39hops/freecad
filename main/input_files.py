@@ -3,16 +3,19 @@ from __future__ import annotations
 
 import importlib
 import itertools
+import logging
 import operator
 import re
 import sys
 import xml.etree.ElementTree as ET
 from typing import Dict, List, Union
 
+LOGGER = logging.getLogger("gds2converter.input_files")
+
 try:
     importlib.reload(sys.modules['supporting_functions'])
 except KeyError:
-    print("Reload not needed for supporting_functions")
+    LOGGER.debug("Reload not needed for supporting_functions")
 
 import supporting_functions as sp
 
@@ -22,7 +25,7 @@ def extract_gds2_info(filepath: str) -> Dict[str, List[sp.Polygon]]:
     The dict maps each ``layerN`` (lowercase) to the list of ``Polygon``
     instances declared on that layer.
     """
-    print("extract_gds2_info Start")
+    LOGGER.info("Reading GDS2 text export: %s", filepath)
     with open(filepath) as myfile:
         content = myfile.read()
     with open(filepath) as myfile:
@@ -62,7 +65,7 @@ def extract_gds2_info(filepath: str) -> Dict[str, List[sp.Polygon]]:
     }
     for idx, _ in enumerate(sorted_polygons[1:]):
         finaldict[sorted_polygons[idx + 1][0].ids] = sorted_polygons[idx + 1][:]
-    print("extract_gds2_info End")
+    LOGGER.info("Parsed %d polygon(s) across %d layer(s)", len(all_polygons), len(finaldict))
     return finaldict
 
 def get_lyp_data(filename: str) -> Dict[str, List[Union[str, None]]]:
@@ -70,7 +73,7 @@ def get_lyp_data(filename: str) -> Dict[str, List[Union[str, None]]]:
 
     Returns a dict mapping ``layerN`` to a ``[name, fill_color]`` pair.
     """
-    print("get_lyp_data Start")
+    LOGGER.info("Reading layer properties: %s", filename)
     tree = ET.parse(filename)
     root = tree.getroot()
 
@@ -92,5 +95,5 @@ def get_lyp_data(filename: str) -> Dict[str, List[Union[str, None]]]:
             name_dict[ln].append([name, color])
         except KeyError:
             name_dict = {**name_dict, **{ln: [name, color]}}
-    print("get_lyp_data End")
+    LOGGER.info("Parsed %d layer color mapping(s)", len(name_dict))
     return name_dict

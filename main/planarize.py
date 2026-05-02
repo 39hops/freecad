@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib
+import logging
 import sys
 from typing import Any
 
@@ -9,10 +10,12 @@ import FreeCAD
 import Part
 from FreeCAD import Base
 
+LOGGER = logging.getLogger("gds2converter.planarize")
+
 try:
     importlib.reload(sys.modules['supporting_functions'])
 except KeyError:
-    print("Reload not needed for supporting_functions")
+    LOGGER.debug("Reload not needed for supporting_functions")
 
 import supporting_functions as sp
 
@@ -26,7 +29,7 @@ def planarize(layer_num: str) -> Any:
     Currently only one planarization is supported per run; FreeCAD will
     auto-suffix the label if called multiple times.
     """
-    print("Start planarize")
+    LOGGER.info("Planarizing above layer %s", layer_num)
     layer_obj = FreeCAD.ActiveDocument.getObject(layer_num).Shape
     below_layer = layer_obj.Edges[0].distToShape(
         FreeCAD.ActiveDocument.getObject("Substrate").Shape
@@ -56,5 +59,5 @@ def planarize(layer_num: str) -> Any:
     trimmed_planar = planar_extrusion.cut(cut_obj)
     planar_layer = FreeCAD.ActiveDocument.addObject("Part::Feature", "myPlanar")
     planar_layer.Shape = trimmed_planar
-    print("End planarize")
+    LOGGER.info("Planarization complete")
     return planar_layer
