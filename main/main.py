@@ -1749,7 +1749,7 @@ class Exports(QtGui.QDialog):
 if True:
     LOGGER.info("Program begin")
     file_in = Inputs()
-    if file_in.exec_() != QtGui.QDialog.Accepted:
+    if file_in.exec() != QtGui.QDialog.Accepted:
         raise RuntimeError("Input selection cancelled. Macro aborted.")
     gds2_filepath: str = file_in.input_files[0]
     all_polygons_dict = files.extract_gds2_info(gds2_filepath)
@@ -1761,7 +1761,7 @@ if True:
         lyp_info = ""
     xs_filepath: str = file_in.input_files[2]
     file_out = Exports()
-    if file_out.exec_() != QtGui.QDialog.Accepted:
+    if file_out.exec() != QtGui.QDialog.Accepted:
         raise RuntimeError("Export selection cancelled. Macro aborted.")
     export_path: str = file_out.output_files
     App.newDocument("Conversion")
