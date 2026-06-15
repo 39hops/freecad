@@ -4,7 +4,7 @@
 
 3D_GDS2Converter is a FreeCAD macro workflow for converting 2D KLayout/GDS2 layouts into 3D FreeCAD geometry and STEP exports using KLayout XSection (`.xs`) scripts.
 
-This repository is based on the original Amorphyx 3D_GDS2Converter project, with cleanup, portability fixes, and reproducible sample cases added.
+This repository builds on [`Amorphyx/3D_GDS2Converter`](https://github.com/Amorphyx/3D_GDS2Converter) (LGPL-3.0-or-later), adding logging, packaging, reproducible sample cases, and the `COPYING` / `COPYING.LESSER` license files that upstream's README references. See [License](#license).
 
 ## What Is Included
 
@@ -128,6 +128,8 @@ Creates a planarized layer on top of existing geometry. Extra XSection options a
 
 ---
 
-3D_GDS2Converter is free software distributed under the GNU LGPL, version 3 or later.
+3D_GDS2Converter is free software distributed under the **GNU LGPL, version 3 or later** — see [`COPYING`](COPYING) (GPL-3.0) and [`COPYING.LESSER`](COPYING.LESSER) (LGPL-3.0).
+
+Original work © Amorphyx ([upstream](https://github.com/Amorphyx/3D_GDS2Converter)); modifications in this repository © Artin Azizi. Both are licensed under the LGPL-3.0-or-later.
 
 The software is provided without warranty, including without implied warranties of merchantability or fitness for a particular purpose.
